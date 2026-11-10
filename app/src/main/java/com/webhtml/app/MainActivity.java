@@ -62,7 +62,6 @@ public class MainActivity extends AppCompatActivity {
     private WebView overlayWebView; 
     private MenuControler menuControler;
     private DownloadHelper downloadHelper;
-    private boolean isMediaPlaying = false; // Prati da li plejer trenutno svira
 
     private ValueCallback<Uri[]> uploadMessage;
     private final static int FILE_CHOOSER_RESULT_CODE = 1;
@@ -229,15 +228,6 @@ public class MainActivity extends AppCompatActivity {
 
         webView.addJavascriptInterface(downloadHelper, "AndroidBridge");
         webView.addJavascriptInterface(new ConfigSaverInterface(this), "AndroidBridgeSaver");
-        
-        // JS Most za praćenje da li plejer svira
-        webView.addJavascriptInterface(new Object() {
-            @Keep
-            @JavascriptInterface
-            public void setMediaPlaying(boolean playing) {
-                isMediaPlaying = playing;
-            }
-        }, "AndroidMediaBridge");
 
         getOnBackPressedDispatcher().addCallback(this, new androidx.activity.OnBackPressedCallback(true) {
             @Override
@@ -377,7 +367,7 @@ public class MainActivity extends AppCompatActivity {
                         view.evaluateJavascript("window.webhtml = true;", null);
                     }
                     
-                    // AGRESIVNA JS ZAŠTITA I PROVERA PLEJERA - POKREĆE SE ISKLJUČIVO AKO JE background: true
+                    // AGRESIVNA JS ZAŠTITA - POKREĆE SE ISKLJUČIVO AKO JE background: true
                     if (background) {
                         String antiPauseJs = 
                             "(function() {" +
@@ -399,18 +389,11 @@ public class MainActivity extends AppCompatActivity {
                             "           if (document.visibilityState !== 'visible') {" +
                             "               Object.defineProperty(document, 'visibilityState', { get: function() { return 'visible'; }, configurable: true });" +
                             "           }" +
-                            "           var isPlaying = false;" +
                             "           var videos = document.querySelectorAll('video, audio');" +
                             "           for(var i=0; i<videos.length; i++) {" +
                             "               if(videos[i].paused && videos[i].currentTime > 0 && !videos[i].ended && videos[i].readyState > 2) {" +
                             "                   videos[i].play().catch(function(e){});" +
                             "               }" +
-                            "               if(!videos[i].paused && !videos[i].ended && videos[i].currentTime > 0) {" +
-                            "                   isPlaying = true;" +
-                            "               }" +
-                            "           }" +
-                            "           if(window.AndroidMediaBridge) {" +
-                            "               window.AndroidMediaBridge.setMediaPlaying(isPlaying);" +
                             "           }" +
                             "        }, 500);" +
                             "   } catch(err) {}" +
@@ -800,17 +783,32 @@ public class MainActivity extends AppCompatActivity {
     protected void onStop() {
         super.onStop();
         
-        // Pokrećemo servis i notifikaciju na onStop (pokriva Home, Recents i Back) 
-        // ISKLJUČIVO ako je uključen background i ako video/audio stvarno svira!
-        if (background && isMediaPlaying) {
-            try {
-                Intent serviceIntent = new Intent(this, MediaService.class);
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                    startForegroundService(serviceIntent);
-                } else {
-                    startService(serviceIntent);
+        // Direktno pitamo JavaScript u trenutku izlaska (Home, Recents, Back) da li plejer svira
+        if (background && webView != null) {
+            webView.evaluateJavascript(
+                "(function() {" +
+                "   var videos = document.querySelectorAll('video, audio');" +
+                "   for(var i=0; i<videos.length; i++) {" +
+                "       if(!videos[i].paused && !videos[i].ended && videos[i].currentTime > 0) {" +
+                "           return 'true';" +
+                "       }" +
+                "   }" +
+                "   return 'false';" +
+                "})();",
+                result -> {
+                    // Ako JavaScript vrati 'true', odmah palimo servis i notifikaciju
+                    if (result != null && (result.equals("true") || result.contains("true"))) {
+                        try {
+                            Intent serviceIntent = new Intent(MainActivity.this, MediaService.class);
+                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                                startForegroundService(serviceIntent);
+                            } else {
+                                startService(serviceIntent);
+                            }
+                        } catch (Exception ignored) {}
+                    }
                 }
-            } catch (Exception ignored) {}
+            );
         }
     }
 
@@ -819,9 +817,8 @@ public class MainActivity extends AppCompatActivity {
         super.onPause();
         if (webView != null) {
             if (!background) {
-                webView.onPause(); // Radi po starom ako je false
+                webView.onPause(); 
             }
-            // Ako je true, preskačemo webView.onPause() da mediji nastave rad
         }
         if (overlayWebView != null) overlayWebView.onPause();
     }
@@ -844,7 +841,6 @@ public class MainActivity extends AppCompatActivity {
     @Override
     protected void onUserLeaveHint() {
         super.onUserLeaveHint();
-        // Ostavljamo prazno jer onStop sada obuhvata sve slučajeve izlaska (Home, Recents, Back)
     }
 
     @Override

@@ -805,6 +805,14 @@ public class MainActivity extends AppCompatActivity {
         super.onResume();
         if (webView != null) webView.onResume();
         if (overlayWebView != null) overlayWebView.onResume();
+        
+        // Čim se korisnik vrati u aplikaciju, gasimo pozadinski servis i sklanjamo notifikaciju
+        if (background) {
+            try {
+                Intent serviceIntent = new Intent(this, MediaService.class);
+                stopService(serviceIntent);
+            } catch (Exception ignored) {}
+        }
     }
 
     @Override

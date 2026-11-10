@@ -3,6 +3,7 @@ package com.webhtml.app;
 import android.app.Notification;
 import android.app.NotificationChannel;
 import android.app.NotificationManager;
+import android.app.PendingIntent;
 import android.app.Service;
 import android.content.Intent;
 import android.os.Build;
@@ -21,17 +22,26 @@ public class MediaService extends Service {
 
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
-        // Kreiramo traženu notifikaciju da bi Android znao da aplikacija radi u prvom planu
+        // Kreiramo intent koji vraća korisnika u MainActivity kada klikne na notifikaciju
+        Intent notificationIntent = new Intent(this, MainActivity.class);
+        notificationIntent.setFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_SINGLE_TOP);
+        
+        int flagsPending = Build.VERSION.SDK_INT >= Build.VERSION_CODES.M 
+                ? PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT 
+                : PendingIntent.FLAG_UPDATE_CURRENT;
+
+        PendingIntent pendingIntent = PendingIntent.getActivity(this, 0, notificationIntent, flagsPending);
+
         Notification notification = new NotificationCompat.Builder(this, CHANNEL_ID)
-                .setContentTitle("Web Aplikacija")
-                .setContentText("Plejer radi u pozadini...")
+                .setContentTitle("LFM APP")
+                .setContentText("Working in background...")
                 .setSmallIcon(android.R.drawable.ic_media_play)
+                .setContentIntent(pendingIntent) // <--- OVO VRAĆA U APLIKACIJU
+                .setAutoCancel(true)
                 .build();
 
-        // Povezujemo servis sa notifikacijom (ovo štiti proces od gašenja)
         startForeground(1, notification);
 
-        // Vraćamo START_STICKY da se automatski vrati ako ga sistem očisti
         return START_STICKY;
     }
 
